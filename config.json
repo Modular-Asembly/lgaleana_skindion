@@ -31,6 +31,191 @@
       "files": [],
       "update_status": "to_update",
       "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "infrastructure",
+        "name": "Cloud SQL Database",
+        "details": ""
+      },
+      "files": [],
+      "update_status": "up_to_date",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "SQL adaptor",
+        "details": "Defines the classic FastAPI SQL utility.\n\nConnects to a database.\nDefines Base.\nDefines a method that returns sessions. This method is used by the FastAPI endpoints.",
+        "env_variables": [
+          "DB_URL"
+        ],
+        "packages": [
+          "psycopg2-binary==2.9.10",
+          "sqlalchemy==2.0.36"
+        ],
+        "dependencies": []
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "infrastructure",
+        "name": "Cloud Scheduler Job",
+        "details": ""
+      },
+      "files": [],
+      "update_status": "up_to_date",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "datamodel",
+        "name": "ShopifyData",
+        "details": "This datamodel represents the data pulled from Shopify. It includes fields such as id (primary key), shopify_id (unique identifier from Shopify), data (JSON field to store Shopify data), and created_at (timestamp for record creation).",
+        "dependencies": [
+          "SQL adaptor"
+        ],
+        "packages": [
+          "psycopg2-binary==2.9.10",
+          "sqlalchemy==2.0.36"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "pull sdata from shopify",
+        "details": "This endpoint is responsible for pulling sdata from Shopify and saving it into the ShopifyData table. It now utilizes the 'shopify api client' module to perform the API requests to Shopify. After receiving the data, it parses the returned data, creates ShopifyData entries using SQL adaptor sessions, and handles errors. The endpoint logs the operation and returns a success or failure status.",
+        "env_variables": [
+          "SHOPIFY_API_KEY",
+          "SHOPIFY_API_SECRET",
+          "SHOPIFY_STORE_URL"
+        ],
+        "packages": [
+          "httpx==0.24.0"
+        ],
+        "dependencies": [
+          "ShopifyData",
+          "SQL adaptor",
+          "shopify api client"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "datamodel",
+        "name": "GoogleAdsData",
+        "details": "This datamodel represents the data pulled from Google Ads. It includes fields such as id (primary key), ads_id (unique identifier from Google Ads), data (JSON field to store Google Ads data), and created_at (timestamp for record creation).",
+        "dependencies": [
+          "SQL adaptor"
+        ],
+        "packages": [
+          "psycopg2-binary==2.9.10",
+          "sqlalchemy==2.0.36"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "pull data from google ads",
+        "details": "This endpoint is responsible for pulling data from Google Ads and saving it into the GoogleAdsData table. It now utilizes the 'google ads api client' module to perform the requests to Google Ads. After receiving the data, it parses the returned data, creates GoogleAdsData entries using SQL adaptor sessions, and handles errors. The endpoint logs the operation and returns a success or failure status.",
+        "env_variables": [
+          "GOOGLE_ADS_CLIENT_ID",
+          "GOOGLE_ADS_CLIENT_SECRET",
+          "GOOGLE_ADS_DEVELOPER_TOKEN",
+          "GOOGLE_ADS_REFRESH_TOKEN"
+        ],
+        "packages": [
+          "httpx==0.24.0"
+        ],
+        "dependencies": [
+          "GoogleAdsData",
+          "SQL adaptor",
+          "google ads api client"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "endpoint",
+        "name": "render dashboard",
+        "details": "This endpoint queries both the ShopifyData and GoogleAdsData tables from the Cloud SQL Database using the SQL adaptor, and then renders an HTML dashboard view. It uses a Jinja2 template named 'dashboard.html' located in the app/templates directory to display the data. The endpoint handles errors and logs its operations. It is intended to be accessed by users or admin interfaces for viewing aggregated data.",
+        "env_variables": [
+          "DASHBOARD_TITLE"
+        ],
+        "packages": [
+          "jinja2==3.1.2"
+        ],
+        "dependencies": [
+          "ShopifyData",
+          "GoogleAdsData",
+          "SQL adaptor",
+          "dashboard view"
+        ]
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "view",
+        "name": "dashboard view",
+        "details": "A Jinja2 template that displays data from both ShopifyData and GoogleAdsData tables. The template will iterate over lists of Shopify and Google Ads records and display key information in a user-friendly format.",
+        "packages": [
+          "jinja2==3.1.2"
+        ],
+        "endpoint": "render dashboard"
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "shopify api client",
+        "details": "Return dummy data",
+        "env_variables": [],
+        "packages": [
+          "httpx==0.24.0"
+        ],
+        "dependencies": []
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
+    },
+    {
+      "design": {
+        "type": "module",
+        "name": "google ads api client",
+        "details": "Return dummy data",
+        "env_variables": [],
+        "packages": [
+          "httpx==0.24.0"
+        ],
+        "dependencies": []
+      },
+      "files": [],
+      "update_status": "to_update",
+      "is_deployed": false
     }
   ],
   "github": "https://github.com/Modular-Asembly/lgaleana_skindion"
