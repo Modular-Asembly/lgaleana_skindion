@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ dashboard_title }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2em;
+        }
+        h1 {
+            color: #333;
+        }
+        .record-container {
+            margin-bottom: 2em;
+        }
+        .record-container h2 {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1em;
+        }
+        table th, table td {
+            border: 1px solid #ddd;
+            padding: 0.5em;
+            text-align: left;
+        }
+        table th {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <h1>{{ dashboard_title }}</h1>
+
+    <div class="record-container">
+        <h2>Shopify Data</h2>
+        {% if shopify_data and shopify_data|length > 0 %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Shopify ID</th>
+                        <th>Data</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in shopify_data %}
+                    <tr>
+                        <td>{{ record.id }}</td>
+                        <td>{{ record.shopify_id }}</td>
+                        <td>
+                            {% for key, value in record.data.items() %}
+                                <strong>{{ key }}:</strong> {{ value }}<br>
+                            {% endfor %}
+                        </td>
+                        <td>{{ record.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No Shopify data available.</p>
+        {% endif %}
+    </div>
+
+    <div class="record-container">
+        <h2>Google Ads Data</h2>
+        {% if google_ads_data and google_ads_data|length > 0 %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ads ID</th>
+                        <th>Data</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in google_ads_data %}
+                    <tr>
+                        <td>{{ record.id }}</td>
+                        <td>{{ record.ads_id }}</td>
+                        <td>
+                            {% for key, value in record.data.items() %}
+                                <strong>{{ key }}:</strong> {{ value }}<br>
+                            {% endfor %}
+                        </td>
+                        <td>{{ record.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No Google Ads data available.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

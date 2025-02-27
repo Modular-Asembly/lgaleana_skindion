@@ -25,11 +25,19 @@
           "uvicorn==0.34.0"
         ],
         "dependencies": [
-          "Every router and Base"
+          "pull sdata from shopify",
+          "render dashboard",
+          "pull data from google ads",
+          "SQL adaptor"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/main.py",
+          "content": "from dotenv import load_dotenv\nload_dotenv()  # Must be called before other imports\n\nfrom fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\n\nfrom app.sql_adaptor import engine, Base\nfrom app.routes.shopify_data import router as shopify_data_router\nfrom app.routes.google_ads_data import router as google_ads_data_router\nfrom app.routes.dashboard import router as dashboard_router\n\ndef create_app() -> FastAPI:\n    app = FastAPI()\n\n    app.add_middleware(\n        CORSMiddleware,\n        allow_origins=[\"*\"],\n        allow_credentials=True,\n        allow_methods=[\"*\"],\n        allow_headers=[\"*\"],\n    )\n\n    # Include all routers\n    app.include_router(shopify_data_router)\n    app.include_router(google_ads_data_router)\n    app.include_router(dashboard_router)\n\n    # Create database tables\n    Base.metadata.create_all(bind=engine)\n\n    return app\n\napp = create_app()\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -56,8 +64,13 @@
         ],
         "dependencies": []
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/sql_adaptor.py",
+          "content": "import os\nfrom typing import Generator\n\nfrom sqlalchemy import create_engine\nfrom sqlalchemy.orm import sessionmaker, Session, DeclarativeBase\n\n# Load the database URL from the environment variable\ndb_url = os.getenv(\"DB_URL\")\nif not db_url:\n    raise EnvironmentError(\"Environment variable DB_URL is not set.\")\nDB_URL: str = db_url\n\n# Create the SQLAlchemy engine\nengine = create_engine(DB_URL, future=True)\n\n# Define the base class for declarative models\nclass Base(DeclarativeBase):\n    pass\n\n# Create a configured \"Session\" class\nSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)\n\ndef get_session() -> Generator[Session, None, None]:\n    \"\"\"\n    Returns a SQLAlchemy session. This function should be used as a FastAPI dependency.\n    \"\"\"\n    session: Session = SessionLocal()\n    try:\n        yield session\n    finally:\n        session.close()\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -83,8 +96,13 @@
           "sqlalchemy==2.0.36"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/models/shopify_data.py",
+          "content": "from sqlalchemy import Column, Integer, String, JSON, DateTime, func\nfrom app.sql_adaptor import Base\n\nclass ShopifyData(Base):\n    __tablename__ = \"shopify_data\"\n\n    id = Column(Integer, primary_key=True, index=True)\n    shopify_id = Column(String, unique=True, nullable=False, index=True)\n    data = Column(JSON, nullable=False)\n    created_at = Column(DateTime, server_default=func.now(), nullable=False)\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -102,12 +120,17 @@
         ],
         "dependencies": [
           "ShopifyData",
-          "SQL adaptor",
-          "shopify api client"
+          "shopify api client",
+          "SQL adaptor"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/routes/shopify_data.py",
+          "content": "import os\nimport logging\nfrom typing import Any, Dict, Optional\n\nfrom fastapi import APIRouter, Depends, HTTPException\nfrom fastapi.responses import JSONResponse\nfrom sqlalchemy.orm import Session\n\nfrom app.sql_adaptor import get_session\nfrom app.models.shopify_data import ShopifyData\nfrom app.shopify_api_client import get_shopify_data\n\nrouter = APIRouter()\n\n\n@router.post(\"/shopify-data/pull\", tags=[\"shopify-data\"])\nasync def pull_sdata_from_shopify(session: Session = Depends(get_session)) -> JSONResponse:\n    \"\"\"\n    Pull sdata from Shopify and store it into the ShopifyData table.\n    \n    Environment Variables:\n    - SHOPIFY_API_KEY: API key to access Shopify.\n    - SHOPIFY_API_SECRET: API secret for Shopify.\n    - SHOPIFY_STORE_URL: The URL of the Shopify store.\n    \n    Dependencies:\n    - ShopifyData (Datamodel)\n    - SQL adaptor for database connection\n    - shopify api client for fetching data from Shopify\n    \"\"\"\n    shopify_api_key: Optional[str] = os.getenv(\"SHOPIFY_API_KEY\")\n    shopify_api_secret: Optional[str] = os.getenv(\"SHOPIFY_API_SECRET\")\n    shopify_store_url: Optional[str] = os.getenv(\"SHOPIFY_STORE_URL\")\n    if not (shopify_api_key and shopify_api_secret and shopify_store_url):\n        raise HTTPException(status_code=400, detail=\"Missing Shopify API configuration.\")\n\n    # At this point, we know the environment variables are not None.\n    api_key: str = shopify_api_key\n    api_secret: str = shopify_api_secret\n    store_url: str = shopify_store_url\n    \n    logging.info(\"Starting pull sdata from Shopify\")\n\n    # Fetch data from Shopify using the shopify API client module.\n    shopify_response: Dict[str, Any] = get_shopify_data()\n\n    # Assume shopify_response contains an \"orders\" key with a list of order dicts.\n    orders = shopify_response.get(\"orders\", [])\n    if not isinstance(orders, list):\n        raise HTTPException(status_code=500, detail=\"Invalid data format received from Shopify API client.\")\n\n    # Insert each order as a record into the ShopifyData table.\n    for order in orders:\n        # Create a new ShopifyData entry.\n        # Convert order id to str in order to match the model requirements.\n        shopify_entry = ShopifyData(shopify_id=str(order.get(\"id\")), data=order)\n        session.add(shopify_entry)\n\n    # Commit the transaction to persist changes.\n    session.commit()\n\n    logging.info(\"Completed pull sdata from Shopify\")\n    return JSONResponse(\n        status_code=200, \n        content={\"detail\": \"Shopify data pulled and stored successfully.\"}\n    )\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -123,8 +146,13 @@
           "sqlalchemy==2.0.36"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/models/google_ads_data.py",
+          "content": "from sqlalchemy import Column, Integer, String, JSON, DateTime, func\nfrom app.sql_adaptor import Base\n\nclass GoogleAdsData(Base):\n    __tablename__ = \"google_ads_data\"\n\n    id = Column(Integer, primary_key=True, index=True)\n    ads_id = Column(String, unique=True, nullable=False, index=True)\n    data = Column(JSON, nullable=False)\n    created_at = Column(DateTime, server_default=func.now(), nullable=False)\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -142,13 +170,18 @@
           "httpx==0.24.0"
         ],
         "dependencies": [
+          "google ads api client",
           "GoogleAdsData",
-          "SQL adaptor",
-          "google ads api client"
+          "SQL adaptor"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/routes/google_ads_data.py",
+          "content": "import os\nimport logging\nfrom typing import Any, Dict, Optional\n\nfrom fastapi import APIRouter, Depends, HTTPException\nfrom fastapi.responses import JSONResponse\nfrom sqlalchemy.orm import Session\n\nfrom app.sql_adaptor import get_session\nfrom app.models.google_ads_data import GoogleAdsData\nfrom app.google_ads_api_client import get_google_ads_data\n\nrouter = APIRouter()\n\n@router.post(\"/google-ads-data/pull\", tags=[\"google-ads-data\"])\nasync def pull_data_from_google_ads(session: Session = Depends(get_session)) -> JSONResponse:\n    \"\"\"\n    Pull data from Google Ads and store it into the GoogleAdsData table.\n\n    Environment Variables:\n    - GOOGLE_ADS_CLIENT_ID: Google Ads client ID.\n    - GOOGLE_ADS_CLIENT_SECRET: Google Ads client secret.\n    - GOOGLE_ADS_DEVELOPER_TOKEN: Google Ads developer token.\n    - GOOGLE_ADS_REFRESH_TOKEN: Google Ads refresh token.\n\n    Dependencies:\n    - GoogleAdsData (datamodel)\n    - SQL adaptor for database connection\n    - google ads api client for fetching data from Google Ads\n\n    Returns:\n        A JSONResponse indicating the success of the operation.\n    \"\"\"\n    google_ads_client_id: Optional[str] = os.getenv(\"GOOGLE_ADS_CLIENT_ID\")\n    google_ads_client_secret: Optional[str] = os.getenv(\"GOOGLE_ADS_CLIENT_SECRET\")\n    google_ads_developer_token: Optional[str] = os.getenv(\"GOOGLE_ADS_DEVELOPER_TOKEN\")\n    google_ads_refresh_token: Optional[str] = os.getenv(\"GOOGLE_ADS_REFRESH_TOKEN\")\n    if not (google_ads_client_id and google_ads_client_secret and google_ads_developer_token and google_ads_refresh_token):\n        raise HTTPException(\n            status_code=400,\n            detail=\"Missing required Google Ads API configuration.\"\n        )\n\n    logging.info(\"Starting pull data from Google Ads\")\n\n    # Fetch data from Google Ads using the google ads api client module.\n    google_ads_response: Dict[str, Any] = get_google_ads_data()\n    \n    # Assume google_ads_response has a \"campaigns\" key containing a list of campaigns.\n    campaigns = google_ads_response.get(\"campaigns\", [])\n    if not isinstance(campaigns, list):\n        raise HTTPException(status_code=500, detail=\"Invalid data format received from Google Ads API client.\")\n\n    # Insert each campaign as a record into the GoogleAdsData table.\n    for campaign in campaigns:\n        # Create a new GoogleAdsData entry.\n        # Convert campaign id to string to match the model requirements if not already.\n        google_ads_entry = GoogleAdsData(ads_id=str(campaign.get(\"id\")), data=campaign)\n        session.add(google_ads_entry)\n\n    # Commit the transaction to persist changes.\n    session.commit()\n\n    logging.info(\"Completed pull data from Google Ads\")\n    return JSONResponse(\n        status_code=200,\n        content={\"detail\": \"Google Ads data pulled and stored successfully.\"}\n    )\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -165,12 +198,16 @@
         "dependencies": [
           "ShopifyData",
           "GoogleAdsData",
-          "SQL adaptor",
-          "dashboard view"
+          "SQL adaptor"
         ]
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/routes/dashboard.py",
+          "content": "import os\nfrom typing import Any, List\n\nfrom fastapi import APIRouter, Request, Depends, HTTPException\nfrom fastapi.responses import HTMLResponse\nfrom sqlalchemy.orm import Session\nfrom jinja2 import Environment, FileSystemLoader, select_autoescape\n\nfrom app.sql_adaptor import get_session\nfrom app.models.shopify_data import ShopifyData\nfrom app.models.google_ads_data import GoogleAdsData\n\nrouter = APIRouter()\n\n# Initialize Jinja2 environment pointing to the templates directory.\ntemplates_env = Environment(\n    loader=FileSystemLoader(\"app/templates\"),\n    autoescape=select_autoescape([\"html\", \"xml\"])\n)\n\ndef fetch_shopify_data(session: Session) -> List[ShopifyData]:\n    \"\"\"Fetch all ShopifyData records.\"\"\"\n    return session.query(ShopifyData).all()\n\ndef fetch_google_ads_data(session: Session) -> List[GoogleAdsData]:\n    \"\"\"Fetch all GoogleAdsData records.\"\"\"\n    return session.query(GoogleAdsData).all()\n\n@router.get(\"/dashboard\", response_class=HTMLResponse, tags=[\"dashboard\"])\nasync def render_dashboard(request: Request, session: Session = Depends(get_session)) -> HTMLResponse:\n    \"\"\"\n    Render the dashboard view by querying ShopifyData and GoogleAdsData.\n    Uses the 'dashboard.html' Jinja2 template located in app/templates.\n\n    Environment Variables:\n    - DASHBOARD_TITLE: Title to display on the dashboard.\n    \"\"\"\n    # Get the dashboard title from environment variables, default if not set.\n    dashboard_title: str = os.getenv(\"DASHBOARD_TITLE\", \"Dashboard\")\n\n    # Query both datamodels using the provided session.\n    shopify_records = fetch_shopify_data(session)\n    google_ads_records = fetch_google_ads_data(session)\n\n    # Render the dashboard template with retrieved data.\n    try:\n        template = templates_env.get_template(\"dashboard.html\")\n    except Exception as template_error:\n        raise HTTPException(status_code=500, detail=\"Template not found.\") from template_error\n\n    rendered_page: str = template.render(\n        request=request,\n        dashboard_title=dashboard_title,\n        shopify_data=shopify_records,\n        google_ads_data=google_ads_records\n    )\n    return HTMLResponse(content=rendered_page)\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -183,8 +220,13 @@
         ],
         "endpoint": "render dashboard"
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/templates/dashboard.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <title>{{ dashboard_title }}</title>\n    <style>\n        body {\n            font-family: Arial, sans-serif;\n            margin: 2em;\n        }\n        h1 {\n            color: #333;\n        }\n        .record-container {\n            margin-bottom: 2em;\n        }\n        .record-container h2 {\n            border-bottom: 1px solid #ccc;\n            padding-bottom: 0.5em;\n        }\n        table {\n            width: 100%;\n            border-collapse: collapse;\n            margin-bottom: 1em;\n        }\n        table th, table td {\n            border: 1px solid #ddd;\n            padding: 0.5em;\n            text-align: left;\n        }\n        table th {\n            background-color: #f5f5f5;\n        }\n    </style>\n</head>\n<body>\n    <h1>{{ dashboard_title }}</h1>\n\n    <div class=\"record-container\">\n        <h2>Shopify Data</h2>\n        {% if shopify_data and shopify_data|length > 0 %}\n            <table>\n                <thead>\n                    <tr>\n                        <th>ID</th>\n                        <th>Shopify ID</th>\n                        <th>Data</th>\n                        <th>Created At</th>\n                    </tr>\n                </thead>\n                <tbody>\n                    {% for record in shopify_data %}\n                    <tr>\n                        <td>{{ record.id }}</td>\n                        <td>{{ record.shopify_id }}</td>\n                        <td>\n                            {% for key, value in record.data.items() %}\n                                <strong>{{ key }}:</strong> {{ value }}<br>\n                            {% endfor %}\n                        </td>\n                        <td>{{ record.created_at }}</td>\n                    </tr>\n                    {% endfor %}\n                </tbody>\n            </table>\n        {% else %}\n            <p>No Shopify data available.</p>\n        {% endif %}\n    </div>\n\n    <div class=\"record-container\">\n        <h2>Google Ads Data</h2>\n        {% if google_ads_data and google_ads_data|length > 0 %}\n            <table>\n                <thead>\n                    <tr>\n                        <th>ID</th>\n                        <th>Ads ID</th>\n                        <th>Data</th>\n                        <th>Created At</th>\n                    </tr>\n                </thead>\n                <tbody>\n                    {% for record in google_ads_data %}\n                    <tr>\n                        <td>{{ record.id }}</td>\n                        <td>{{ record.ads_id }}</td>\n                        <td>\n                            {% for key, value in record.data.items() %}\n                                <strong>{{ key }}:</strong> {{ value }}<br>\n                            {% endfor %}\n                        </td>\n                        <td>{{ record.created_at }}</td>\n                    </tr>\n                    {% endfor %}\n                </tbody>\n            </table>\n        {% else %}\n            <p>No Google Ads data available.</p>\n        {% endif %}\n    </div>\n</body>\n</html>\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -198,8 +240,13 @@
         ],
         "dependencies": []
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/shopify_api_client.py",
+          "content": "from typing import Any, Dict\n\ndef get_shopify_data() -> Dict[str, Any]:\n    \"\"\"\n    Returns dummy Shopify data mimicking a typical API response.\n    \"\"\"\n    dummy_data: Dict[str, Any] = {\n        \"orders\": [\n            {\n                \"id\": 1,\n                \"status\": \"paid\",\n                \"total\": 100.0,\n                \"currency\": \"USD\"\n            },\n            {\n                \"id\": 2,\n                \"status\": \"fulfilled\",\n                \"total\": 150.0,\n                \"currency\": \"USD\"\n            }\n        ],\n        \"shop\": {\n            \"name\": \"Dummy Shopify Store\",\n            \"domain\": \"dummy-shop.myshopify.com\"\n        }\n    }\n    return dummy_data\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     },
     {
@@ -213,8 +260,13 @@
         ],
         "dependencies": []
       },
-      "files": [],
-      "update_status": "to_update",
+      "files": [
+        {
+          "path": "app/google_ads_api_client.py",
+          "content": "from typing import Any, Dict\n\ndef get_google_ads_data() -> Dict[str, Any]:\n    \"\"\"\n    Returns dummy Google Ads data mimicking a typical API response.\n    The returned dictionary includes basic ads insights.\n    \"\"\"\n    dummy_data: Dict[str, Any] = {\n        \"campaigns\": [\n            {\n                \"id\": \"campaign_1\",\n                \"name\": \"Campaign One\",\n                \"impressions\": 10000,\n                \"clicks\": 300,\n                \"cost\": 150.75,\n                \"currency\": \"USD\"\n            },\n            {\n                \"id\": \"campaign_2\",\n                \"name\": \"Campaign Two\",\n                \"impressions\": 15000,\n                \"clicks\": 450,\n                \"cost\": 225.50,\n                \"currency\": \"USD\"\n            }\n        ],\n        \"account\": {\n            \"id\": \"account_12345\",\n            \"name\": \"Dummy Google Ads Account\"\n        }\n    }\n    return dummy_data\n"
+        }
+      ],
+      "update_status": "up_to_date",
       "is_deployed": false
     }
   ],
